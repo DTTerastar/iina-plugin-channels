@@ -1,0 +1,15 @@
+{
+  "name": "Channels",
+  "identifier": "net.terastar.iina-channels",
+  "version": "0.1.0",
+  "description": "IPTV channel browser: M3U playlists with search, groups and an XMLTV now/next guide.",
+  "author": { "name": "Darrell Turner", "url": "https://github.com/DTTerastar/iina-plugin-channels" },
+  "ghRepo": "DTTerastar/iina-plugin-channels",
+  "ghVersion": 1,
+  "entry": "main.js",
+  "permissions": ["network-request", "show-osd", "file-system"],
+  "allowedDomains": ["*"],
+  "sidebarTab": { "name": "Channels" },
+  "preferencesPage": "pref.html",
+  "preferenceDefaults": { "m3u_url": "" }
+}

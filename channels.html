@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<style>
+  /* The standalone window follows the system appearance; the sidebar sits on IINA's dark panel. */
+  :root { color-scheme: light dark; }
+  :root.sidebar { color-scheme: dark; }
+  /* Search and group stay put; only the list scrolls. */
+  body { font: 12px -apple-system, sans-serif; color: CanvasText; margin: 0; padding: 8px; box-sizing: border-box;
+         height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+  #list { flex: 1; overflow-y: auto; }
+  #bar { display: flex; gap: 6px; margin-bottom: 6px; }
+  #q { flex: 1; min-width: 0; }
+  #g { width: 100%; margin-bottom: 6px; }
+  #status { opacity: 0.6; padding: 4px 6px; }
+  .ch { padding: 4px 6px; border-radius: 4px; cursor: default; user-select: none; -webkit-user-select: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ch:hover { background: rgba(128, 128, 128, 0.25); }
+  .ch small { opacity: 0.55; margin-left: 6px; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <input id="q" type="search" placeholder="Search channels or programmes" autocomplete="off" autocorrect="off" spellcheck="false" autofocus />
+  <button id="reload" title="Reload playlist">↻</button>
+</div>
+<select id="g"></select>
+<div id="status">Loading…</div>
+<div id="list"></div>
+<script src="m3u.js"></script>
+<script>
+  const ALL = "*";
+  const MAX = 300; // ponytail: cap rendered rows instead of virtual scrolling; search narrows the rest
+  const q = document.getElementById("q"), g = document.getElementById("g");
+  const list = document.getElementById("list"), status = document.getElementById("status");
+  let channels = [];
+  let guide = new Map(); // tvg-id -> programmes sorted by start: [{ start, stop, title, desc }]
+  let guideNote = "";
+
+  const clock = (ms) => new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
+  // What a channel is showing right now, and what follows it.
+  function nowNext(c) {
+    const progs = guide.get(c.id) || [];
+    const t = Date.now();
+    const i = progs.findIndex((p) => p.start <= t && t < p.stop);
+    return i < 0 ? {} : { now: progs[i], next: progs[i + 1] };
+  }
+
+  function render() {
+    const words = q.value.toLowerCase().split(/\s+/).filter(Boolean);
+    const group = g.value;
+    const hits = channels
+      .map((c) => ({ c, ...nowNext(c) }))
+      .filter(({ c, now }) => (group === ALL || c.group === group) &&
+        words.every((w) => c.key.includes(w) || (now && now.title.toLowerCase().includes(w))));
+    list.replaceChildren(...hits.slice(0, MAX).map(({ c, now, next }) => {
+      const row = document.createElement("div");
+      row.className = "ch";
+      row.textContent = c.name;
+      // The programme on now, when the guide has one; otherwise the group.
+      const sub = now ? now.title : group === ALL ? c.group : "";
+      if (sub) {
+        const s = document.createElement("small");
+        s.textContent = sub;
+        row.append(s);
+      }
+      if (now) {
+        row.title = `${clock(now.start)} – ${clock(now.stop)}  ${now.title}` +
+          (next ? `\nNext: ${clock(next.start)}  ${next.title}` : "") +
+          (now.desc ? `\n\n${now.desc}` : "");
+      }
+      row.onclick = () => iina.postMessage("play", { url: c.url, name: c.name });
+      return row;
+    }));
+    status.textContent = (hits.length > MAX ? `Showing ${MAX} of ${hits.length} — type to narrow` : `${hits.length} channels`) + guideNote;
+  }
+
+  // ponytail: plain XMLTV only; gzipped guides (.xml.gz) would need DecompressionStream here.
+  async function loadGuide(url) {
+    guide = new Map();
+    guideNote = "";
+    if (!url) return;
+    const text = (p, tag) => (p.getElementsByTagName(tag)[0] || {}).textContent || "";
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const doc = new DOMParser().parseFromString(await res.text(), "text/xml");
+      for (const p of doc.getElementsByTagName("programme")) {
+        const id = p.getAttribute("channel");
+        if (!guide.has(id)) guide.set(id, []);
+        guide.get(id).push({
+          start: xmltvTime(p.getAttribute("start")),
+          stop: xmltvTime(p.getAttribute("stop")),
+          title: text(p, "title"),
+          desc: text(p, "desc"),
+        });
+      }
+      for (const progs of guide.values()) progs.sort((a, b) => a.start - b.start);
+    } catch (e) {
+      guideNote = " · guide unavailable";
+    }
+    render();
+  }
+
+  function load() {
+    status.textContent = "Loading…";
+    iina.postMessage("load", {});
+  }
+
+  function show(data) {
+    channels = data.map((c) => ({ ...c, key: (c.name + " " + c.group).toLowerCase() }));
+    const counts = new Map();
+    for (const c of channels) counts.set(c.group, (counts.get(c.group) || 0) + 1);
+    const groups = [...counts].sort(([a], [b]) => a.localeCompare(b));
+    g.replaceChildren(
+      new Option(`All groups (${channels.length})`, ALL),
+      ...groups.map(([name, n]) => new Option(`${name || "(no group)"} (${n})`, name)),
+    );
+    render();
+  }
+
+  function fail(msg) {
+    channels = [];
+    list.replaceChildren();
+    status.textContent = msg;
+  }
+
+  iina.onMessage("config", async ({ url, sidebar }) => {
+    document.documentElement.classList.toggle("sidebar", sidebar);
+    if (!url) return fail("Set the M3U URL in IINA Settings → Plugins → Channels.");
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const playlist = await res.text();
+      show(parseM3U(playlist));
+      loadGuide(guideUrl(playlist));
+    } catch (e) {
+      fail("Could not load the playlist: " + e.message);
+    }
+  });
+
+  iina.onMessage("error", (msg) => { status.textContent = msg; });
+
+  q.oninput = render;
+  g.onchange = render;
+  document.getElementById("reload").onclick = load;
+  setInterval(render, 60000); // keeps "on now" current as programmes change
+  load();
+</script>
+</body>
+</html>
