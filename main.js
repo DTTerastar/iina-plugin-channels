@@ -56,9 +56,17 @@ function show(view) {
   });
 }
 
-show(standaloneWindow);
-standaloneWindow.setProperty({ title: "Browse" });
-standaloneWindow.setFrame(380, 640);
-menu.addItem(menu.item("Show Channel List", () => standaloneWindow.open()));
+// The standalone list loads on first use. Loading it at startup would download the
+// playlist and guide a second time for every player window, even if it is never shown.
+let listLoaded = false;
+menu.addItem(menu.item("Show Channel List", () => {
+  if (!listLoaded) {
+    show(standaloneWindow);
+    standaloneWindow.setProperty({ title: "Browse" });
+    standaloneWindow.setFrame(380, 640);
+    listLoaded = true;
+  }
+  standaloneWindow.open();
+}));
 
 event.on("iina.window-loaded", () => show(sidebar));
