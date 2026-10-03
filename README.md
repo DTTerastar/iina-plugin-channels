@@ -48,6 +48,8 @@ IINA shows these when you install the plugin. This is why each is there:
 - The list shows 300 rows at a time. Search or pick a group to see the rest.
 - Guide data must be plain XMLTV (not gzipped), and a channel needs a
   `tvg-id` that matches the guide.
+- After updating the plugin, quit and reopen IINA. The sidebar list stays blank
+  until you do.
 - **Plugin → Reload All Plugins** crashes IINA 1.5.0 while a plugin with a
   sidebar is loaded. Quit and reopen IINA instead.
 - Tested with one playlist, served by [Tuliprox](https://github.com/euzu/tuliprox),
