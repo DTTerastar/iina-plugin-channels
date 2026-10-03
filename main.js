@@ -1,4 +1,25 @@
-const { sidebar, standaloneWindow, menu, preferences, core, event, mpv } = iina;
+const { sidebar, standaloneWindow, menu, preferences, core, event, mpv, utils } = iina;
+
+// Playlists and guides are fetched with curl: IINA's http module refuses plain http:// URLs
+// (App Transport Security), and a web view only gets them if the server sends CORS headers.
+async function fetchText(url) {
+  // The guide URL comes out of the playlist, so only ever hand curl an http(s) URL.
+  if (!/^https?:\/\//i.test(url)) throw new Error("not an http(s) URL");
+  const out = await utils.exec("/usr/bin/curl", [
+    "-fsSL", "--compressed", "--proto", "=http,https", "--max-time", "60",
+    "-A", "iina-plugin-channels", "--", url,
+  ]);
+  if (out.status !== 0) throw new Error((out.stderr || "").trim() || "curl exited with " + out.status);
+  return out.stdout;
+}
+
+async function send(view, name, url) {
+  try {
+    view.postMessage(name, { text: await fetchText(url) });
+  } catch (e) {
+    view.postMessage(name, { error: e.message || String(e) });
+  }
+}
 
 // The channel just picked in the list, until mpv starts loading it.
 let pending = null;
@@ -16,11 +37,12 @@ mpv.addHook("on_load", 9, () => {
 // browsed before anything is playing. loadFile clears listeners, so register after it.
 function show(view) {
   view.loadFile("channels.html");
-  // The page fetches the playlist itself: IINA's http module refuses plain http:// URLs
-  // (App Transport Security), but web content is allowed to load them.
   view.onMessage("load", () => {
-    view.postMessage("config", { url: preferences.get("m3u_url") || "", sidebar: view === sidebar });
+    const url = preferences.get("m3u_url") || "";
+    view.postMessage("config", { sidebar: view === sidebar, configured: !!url });
+    if (url) send(view, "playlist", url);
   });
+  view.onMessage("guide", ({ url }) => send(view, "guide", url));
   // core.open on an http(s) URL needs "network-request" plus the stream's host in allowedDomains.
   view.onMessage("play", ({ url, name }) => {
     try {

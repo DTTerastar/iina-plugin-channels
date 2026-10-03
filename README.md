@@ -3,6 +3,10 @@
 An [IINA](https://iina.io) plugin that turns an M3U playlist into a channel
 browser, with search, groups and a now/next guide.
 
+<img src="screenshot.png" width="380" alt="The channel list, shown with sample data">
+
+*The channel list, shown with sample data.*
+
 ## What it does
 
 - Lists the channels from an M3U playlist, in the player sidebar or in its own
@@ -36,21 +40,18 @@ IINA shows these when you install the plugin. This is why each is there:
 | Permission | Why |
 | --- | --- |
 | Network, all domains | IINA requires it before a plugin may open an `http(s)` stream, and stream hosts differ per provider. |
-| File system | IINA requires it before a plugin may set a stream's title. The plugin does not read or write files. |
+| File system | IINA requires it before a plugin may set a stream's title or run a helper. The plugin runs `/usr/bin/curl` to download the playlist and guide; it does not read or write files. |
 | Show OSD | Flashes the channel name when you tune. |
 
 ## Limits
 
-- The playlist and guide are fetched by the plugin's web view, so the server
-  has to send an `Access-Control-Allow-Origin` header.
-  [Tuliprox](https://github.com/euzu/tuliprox) does; many raw provider URLs
-  may not.
 - The list shows 300 rows at a time. Search or pick a group to see the rest.
 - Guide data must be plain XMLTV (not gzipped), and a channel needs a
   `tvg-id` that matches the guide.
 - **Plugin → Reload All Plugins** crashes IINA 1.5.0 while a plugin with a
   sidebar is loaded. Quit and reopen IINA instead.
-- Tested with one Tuliprox playlist on IINA 1.5.0, macOS 27.
+- Tested with one playlist, served by [Tuliprox](https://github.com/euzu/tuliprox),
+  on IINA 1.5.0 and macOS 27.
 
 ## Development
 

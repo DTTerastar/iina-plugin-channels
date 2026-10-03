@@ -76,31 +76,21 @@
     status.textContent = (hits.length > MAX ? `Showing ${MAX} of ${hits.length} — type to narrow` : `${hits.length} channels`) + guideNote;
   }
 
-  // ponytail: plain XMLTV only; gzipped guides (.xml.gz) would need DecompressionStream here.
-  async function loadGuide(url) {
-    guide = new Map();
-    guideNote = "";
-    if (!url) return;
+  // ponytail: plain XMLTV only; a guide served as a .xml.gz file would need DecompressionStream here.
+  function readGuide(xml) {
     const text = (p, tag) => (p.getElementsByTagName(tag)[0] || {}).textContent || "";
-    try {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      const doc = new DOMParser().parseFromString(await res.text(), "text/xml");
-      for (const p of doc.getElementsByTagName("programme")) {
-        const id = p.getAttribute("channel");
-        if (!guide.has(id)) guide.set(id, []);
-        guide.get(id).push({
-          start: xmltvTime(p.getAttribute("start")),
-          stop: xmltvTime(p.getAttribute("stop")),
-          title: text(p, "title"),
-          desc: text(p, "desc"),
-        });
-      }
-      for (const progs of guide.values()) progs.sort((a, b) => a.start - b.start);
-    } catch (e) {
-      guideNote = " · guide unavailable";
+    const doc = new DOMParser().parseFromString(xml, "text/xml");
+    for (const p of doc.getElementsByTagName("programme")) {
+      const id = p.getAttribute("channel");
+      if (!guide.has(id)) guide.set(id, []);
+      guide.get(id).push({
+        start: xmltvTime(p.getAttribute("start")),
+        stop: xmltvTime(p.getAttribute("stop")),
+        title: text(p, "title"),
+        desc: text(p, "desc"),
+      });
     }
-    render();
+    for (const progs of guide.values()) progs.sort((a, b) => a.start - b.start);
   }
 
   function load() {
@@ -126,18 +116,26 @@
     status.textContent = msg;
   }
 
-  iina.onMessage("config", async ({ url, sidebar }) => {
+  iina.onMessage("config", ({ sidebar, configured }) => {
     document.documentElement.classList.toggle("sidebar", sidebar);
-    if (!url) return fail("Set the M3U URL in IINA Settings → Plugins → Channels.");
-    try {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      const playlist = await res.text();
-      show(parseM3U(playlist));
-      loadGuide(guideUrl(playlist));
-    } catch (e) {
-      fail("Could not load the playlist: " + e.message);
-    }
+    if (!configured) fail("Set the M3U URL in IINA Settings → Plugins → Channels.");
+  });
+
+  iina.onMessage("playlist", ({ text, error }) => {
+    if (error) return fail("Could not load the playlist: " + error);
+    const found = parseM3U(text);
+    if (!found.length) return fail("No channels found at the playlist URL.");
+    guide = new Map();
+    guideNote = "";
+    show(found);
+    const url = guideUrl(text);
+    if (url) iina.postMessage("guide", { url });
+  });
+
+  iina.onMessage("guide", ({ text, error }) => {
+    if (error) guideNote = " · guide unavailable";
+    else readGuide(text);
+    render();
   });
 
   iina.onMessage("error", (msg) => { status.textContent = msg; });
